@@ -1,0 +1,15 @@
+{
+  "folders": [
+    {
+      "path": "."
+    }
+  ],
+  "extensions": {
+    "recommendations": [
+      "ms-azuretools.vscode-apimanagement",
+      "42Crunch.vscode-openapi",
+      "ms-azuretools.vscode-bicep","humao.rest-client"
+    ]
+  },
+  "settings": {}
+}
