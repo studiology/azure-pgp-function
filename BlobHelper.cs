@@ -55,6 +55,8 @@ namespace RIC.Integration.Azure.Functions
             CloudStorageAccount storageAccount = CloudStorageAccount.Parse(connectionString);
             CloudBlobClient blobClient = storageAccount.CreateCloudBlobClient();
             CloudBlobContainer container = blobClient.GetContainerReference(containerName);
+
+            // TODO: Add boolean CreateContainerIfNecessary option
             //container.CreateIfNotExists();
 
             CloudBlockBlob blob = container.GetBlockBlobReference(fileName);

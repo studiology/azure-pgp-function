@@ -86,6 +86,7 @@ namespace RIC.Integration.Azure.Functions
             //return secrectsDecrypt[secretIdentifier];
         }
 
+        [Obsolete]
         private static async Task<Stream> DecryptAsync(Stream inputStream, string privateKey, string passPhrase)
         {
             using (PGP pgp = new PGP())
@@ -179,6 +180,7 @@ namespace RIC.Integration.Azure.Functions
             //return secretsencrypt[secretIdentifier];
         }
 
+        [Obsolete]
         private static async Task<Stream> EncryptAsync(Stream inputStream, string publicKey)
         {
             using (PGP pgp = new PGP())

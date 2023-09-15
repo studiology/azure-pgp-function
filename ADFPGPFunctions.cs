@@ -1,19 +1,22 @@
-﻿using System;
-using System.IO;
-using System.Threading.Tasks;
+﻿using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.KeyVault;
+using Microsoft.Azure.KeyVault.Models;
+using Microsoft.Azure.Services.AppAuthentication;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using System.Net.Http;
-using System.Collections.Concurrent;
-using Microsoft.Azure.KeyVault.Models;
-using System.Text;
-using Microsoft.Azure.KeyVault;
+
 using PgpCore;
-using Microsoft.Azure.Services.AppAuthentication;
-using System.Linq;
+
+using System;
+using System.Collections.Concurrent;
+using System.IO;
+using System.Net.Http;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading.Tasks;
 
 namespace RIC.Integration.Azure.Functions
 {
@@ -32,34 +35,24 @@ namespace RIC.Integration.Azure.Functions
 
             //Get the Base64 encoded public key.
             //string publicKeyBase64 = Environment.GetEnvironmentVariable("Base64PublicEncryptionKey");
-            string publicKeySecretId = req.Headers["public-key-secret-id"];
-            string blobstorageAccountSecID = req.Headers["blob-storageaccount-secret-id"];
-            string blobstorageContainerSecID = req.Headers["blob-container-secret-id"];
-            string sourceBlobFilename = req.Headers.ContainsKey("source-blob-filename") ? req.Headers["source-blob-filename"] : req.Headers["blob-filename"];
-            string targetBlobFilename = req.Headers["target-blob-filename"];
-            string targetBlobContainer= req.Headers["target-container"];
-
-            string publicKeyBase64 = await GetPublicKeyAsync(publicKeySecretId, log);
-
-            string blobstorageAccountConn = await GetPublicKeyAsync(blobstorageAccountSecID, log);
-            string blobstorageContainer = !req.Headers.ContainsKey("blob-container-secret-id") 
-                ? (string)req.Headers["source-container"] 
-                : await GetPublicKeyAsync(blobstorageContainerSecID, log);
-
-            long pgpsize = 0;
-
+            string publicKeySecretId         = (string)req.Headers["public-key-secret-id"];
+            string blobstorageAccountSecID   = (string)req.Headers["blob-storageaccount-secret-id"];
+            string blobstorageContainerSecID = (string)req.Headers["blob-container-secret-id"];
+            string sourceBlobFilename        = req.Headers.ContainsKey("source-blob-filename") ? (string)req.Headers["source-blob-filename"] : (string)req.Headers["blob-filename"];
+            string targetBlobContainer       = (string)req.Headers["target-container"];
+            string targetBlobFilename        = !string.IsNullOrWhiteSpace( req.Headers["target-blob-filename"] ) ? (string)req.Headers["target-blob-filename"] : sourceBlobFilename;
             try
             {
+                string publicKeyBase64 = await GetSecretAsync( publicKeySecretId, log );
+                string blobstorageAccountConn = await GetSecretAsync( blobstorageAccountSecID, log );
+                string blobstorageContainer = (string)req.Headers?["source-container"] ?? await GetSecretAsync( blobstorageContainerSecID, log );
 
-                //Extract the Json body out of request.
-                //dynamic _requestBody = await new StreamReader(req.Body).ReadToEndAsync();
-                //var _requestObject = JsonConvert.DeserializeObject<ServiceRequest>(_requestBody as string);
 
                 //Gets the Blob contents. Passing in the Container name and the file name.
-                string _sFile = sourceBlobFilename; 
-                string _dFile = targetBlobFilename; 
+                string _sFile = sourceBlobFilename;
+                string _dFile = targetBlobFilename;
                 string _sContainer = blobstorageContainer;
-                string _dContainer = targetBlobContainer;
+                string _dContainer = string.IsNullOrWhiteSpace(targetBlobContainer) ? _sContainer : targetBlobContainer;
                 string _fileContents = BlobHelper.GetBlob(blobstorageAccountConn, _sContainer, _sFile);
 
                 //Convert the key to String
@@ -70,20 +63,29 @@ namespace RIC.Integration.Azure.Functions
                 Stream encryptedData = await EncryptAsync(StringtoStream(_fileContents), publicKey);
 
                 //Generate the pgp file with the correct file extension.
-                _sFile = _sFile + ".pgp";
+                _sFile += ".pgp";
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
-                BlobHelper.WriteBlob( blobstorageAccountConn, _sContainer, _sFile, encryptedData );
+                BlobHelper.WriteBlob( blobstorageAccountConn, _dContainer, _dFile, encryptedData );
 
-                pgpsize = encryptedData.Length;
                 //Data Factory requires Azure Function to response back in Json format, or JObject.
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing commpleted. FileName : " + _sFile );
+                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing commpleted. FileName : " + _dFile );
 
-                return (ActionResult)new OkObjectResult( new { Status = "Success", Message = _sFile, PGPFilesize = pgpsize.ToString() } );
+                return new OkObjectResult( (Status: "Success", Message: _dFile, PGPFilesize: encryptedData.Length) );
             }
-            catch ( Exception exp )
+            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "SecretNotFound" )
             {
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : " + exp.ToString() );
-                return new BadRequestObjectResult( new { Status = "Failure", Message = "funcPGPEncrypt Failed : " + exp.ToString() + "blobstorageAccountConn:" + blobstorageAccountConn + "publicKeySecretId" + publicKeySecretId + "blobstorageContainer" + blobstorageContainer } );
+                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
+                return new NotFoundResult();
+            }
+            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "Forbidden" )
+            {
+                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
+                return new UnauthorizedResult();
+            }
+            catch ( Exception e )
+            {
+                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
+                return new BadRequestObjectResult( (Status: "Failure", Message: $"Failed : {e.Message}. ") );
             }
 
         }
@@ -98,27 +100,22 @@ namespace RIC.Integration.Azure.Functions
             return stream;
         }
 
-        private static async Task<string> GetPublicKeyAsync ( string secretIdentifier, ILogger log )
+        private static async Task<string> GetSecretAsync ( string secretIdentifier, ILogger log )
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
             var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
             var kvClient = new KeyVaultClient(authenticationCallback, client);
 
+            log.LogDebug( $"looking up secretIdentifier {secretIdentifier} in Key Vault" );
             SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
-
             return secretBundle.Value;
-
-            //if (!secrets.ContainsKey(secretIdentifier))
-            //{
-            //    secrets[secretIdentifier] = secretBundle.Value;
-            //}
-
-            //log.LogInformation($"Function {nameof(funcPGPEncrypt)} GetPublicKeyAsync commpleted. KeyID is : " + secretIdentifier + ", Key value is " + (string.IsNullOrWhiteSpace(secrets[secretIdentifier]) ? "NULL." : "Not NULL."));
-            //return secrets[secretIdentifier];
         }
 
+        // TODO: Replace with new method
+        [Obsolete]
         private static async Task<Stream> EncryptAsync ( Stream inputStream, string publicKey )
         {
+
             using ( PGP pgp = new PGP() )
             {
                 Stream outputStream = new MemoryStream();
@@ -201,13 +198,13 @@ namespace RIC.Integration.Azure.Functions
             {
                 string fileext = Path.GetExtension(blobstorageFilename);
                 if ( string.IsNullOrWhiteSpace( fileext ) )
-                    _fileName = _fileName + ".CSV";
+                    _fileName += ".CSV";
                 else
                     _fileName = _fileName.Replace( fileext, ".CSV" );
             }
             catch
             {
-                _fileName = _fileName + ".CSV";
+                _fileName += ".CSV";
 
             }
 
@@ -258,14 +255,15 @@ namespace RIC.Integration.Azure.Functions
 
             return secretBundle.Value;
 
-            // 
+            //
             //if (!secrectsDecrypt.ContainsKey(secretIdentifier))
             //{
             //    secrectsDecrypt[secretIdentifier] = secretBundle.Value;
             //}
             //return secrectsDecrypt[secretIdentifier];
         }
-
+        // TODO: replace with new method
+        [Obsolete]
         private static async Task<Stream> DecryptAsync ( Stream inputStream, string privateKey, string passPhrase )
         {
             using ( PGP pgp = new PGP() )
@@ -275,7 +273,7 @@ namespace RIC.Integration.Azure.Functions
                 using ( inputStream )
                 using ( Stream privateKeyStream = GenerateStreamFromString( privateKey ) )
                 {
-                    await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
+                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
                     outputStream.Seek( 0, SeekOrigin.Begin );
                     return outputStream;
                 }
@@ -402,7 +400,7 @@ namespace RIC.Integration.Azure.Functions
 
             return secretBundle.Value;
 
-            // 
+            //
             //if (!secrectsDecrypt.ContainsKey(secretIdentifier))
             //{
             //    secrectsDecrypt[secretIdentifier] = secretBundle.Value;
@@ -410,6 +408,7 @@ namespace RIC.Integration.Azure.Functions
             //return secrectsDecrypt[secretIdentifier];
         }
 
+        [Obsolete]
         private static async Task<Stream> DecryptAsync ( Stream inputStream, string privateKey, string passPhrase )
         {
             using ( PGP pgp = new PGP() )
@@ -419,8 +418,8 @@ namespace RIC.Integration.Azure.Functions
                 using ( inputStream )
                 using ( Stream privateKeyStream = GenerateStreamFromString( privateKey ) )
                 {
-                    await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
-                    outputStream.Seek( 0, SeekOrigin.Begin );
+                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
+                    _ = outputStream.Seek( 0, SeekOrigin.Begin );
                     return outputStream;
                 }
             }
