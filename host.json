@@ -1,0 +1,26 @@
+{
+  "extensions": {
+    "http": {
+      "hsts": {
+        "includeSubDomains": true,
+        "isEnabled": true,
+        "maxAge": "86400"
+      },
+      "maxConcurrentRequests": 8,
+      "maxOutstandingRequests": 24,
+      "routePrefix": "api"
+    }
+  },
+  "logging": {
+    "applicationInsights": {
+      "enableDependencyTracking": true,
+      "samplingSettings": {
+        "movingAverageRatio": 0.8,
+        "samplingPercentageDecreaseTimeout": "00:00:10",
+        "samplingPercentageIncreaseTimeout": "00:00:10"
+      }
+    },
+    "logLevel": { "default": "Information" }
+  },
+  "version": "2.0"
+}
