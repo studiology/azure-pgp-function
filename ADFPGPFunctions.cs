@@ -26,6 +26,7 @@ namespace RIC.Integration.Azure.Functions
         //private static ConcurrentDictionary<string, string> secrets = new ConcurrentDictionary<string, string>();
 
         [FunctionName( nameof( FuncPGPEncrypt ) )]
+        [Obsolete]
         public static async Task<IActionResult> RunAsync (
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)]
         HttpRequest req, ILogger log )
@@ -147,6 +148,7 @@ namespace RIC.Integration.Azure.Functions
         private static ConcurrentDictionary<string, string> secrectsDecrypt = new ConcurrentDictionary<string, string>();
 
         [FunctionName( nameof( FuncPGPDecrypt ) )]
+        [Obsolete]
         public static async Task<IActionResult> RunAsync ( [HttpTrigger( AuthorizationLevel.Function, "post", Route = null )] HttpRequest req,
                                                            ILogger log )
         {
@@ -299,6 +301,7 @@ namespace RIC.Integration.Azure.Functions
         private static ConcurrentDictionary<string, string> secrectsDecrypt = new ConcurrentDictionary<string, string>();
 
         [FunctionName( nameof( PGPDecryptBlob ) )]
+        [Obsolete]
         public static async Task<IActionResult> RunAsync (
             [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)]
         HttpRequest req, ILogger log )
