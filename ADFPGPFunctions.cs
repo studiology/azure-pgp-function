@@ -148,7 +148,6 @@ namespace RIC.Integration.Azure.Functions
         private static ConcurrentDictionary<string, string> secrectsDecrypt = new ConcurrentDictionary<string, string>();
 
         [FunctionName( nameof( FuncPGPDecrypt ) )]
-        [Obsolete]
         public static async Task<IActionResult> RunAsync ( [HttpTrigger( AuthorizationLevel.Function, "post", Route = null )] HttpRequest req,
                                                            ILogger log )
         {
@@ -199,15 +198,14 @@ namespace RIC.Integration.Azure.Functions
             try
             {
                 string fileext = Path.GetExtension(blobstorageFilename);
-                if ( string.IsNullOrWhiteSpace( fileext ) )
-                    _fileName += ".CSV";
-                else
-                    _fileName = _fileName.Replace( fileext, ".CSV" );
+                if ( fileext.Equals( ".pgp", comparisonType: StringComparison.InvariantCultureIgnoreCase )
+                  || fileext.Equals( ".gpg", comparisonType: StringComparison.InvariantCultureIgnoreCase ) )
+                {
+                    _fileName = _fileName.Remove( startIndex: _fileName.LastIndexOf('.') );
+                }
             }
             catch
             {
-                _fileName += ".CSV";
-
             }
 
             try
@@ -225,7 +223,9 @@ namespace RIC.Integration.Azure.Functions
                     log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} passPhrase is empty" );
 
 
-                Stream decryptedData = await DecryptAsync(GenerateStreamFromString(_fileContents), privateKey, passPhrase);
+                Stream decryptedData = await DecryptAsync(GenerateStreamFromString(_fileContents),
+                                                          GenerateStreamFromString(privateKey),
+                                                          passPhrase);
 
                 log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} writing blob." );
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
@@ -264,7 +264,7 @@ namespace RIC.Integration.Azure.Functions
             //}
             //return secrectsDecrypt[secretIdentifier];
         }
-        // TODO: replace with new method
+
         [Obsolete]
         private static async Task<Stream> DecryptAsync ( Stream inputStream, string privateKey, string passPhrase )
         {
@@ -276,6 +276,39 @@ namespace RIC.Integration.Azure.Functions
                 using ( Stream privateKeyStream = GenerateStreamFromString( privateKey ) )
                 {
                     _ = await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
+                    outputStream.Seek( 0, SeekOrigin.Begin );
+                    return outputStream;
+                }
+            }
+        }
+        private static async Task<Stream> DecryptAsync ( Stream inputStream, Stream privateKeyStream, string passPhrase )
+        {
+            using ( privateKeyStream )
+            {
+                EncryptionKeys encryptionKeys = new EncryptionKeys(privateKeyStream, passPhrase);
+                using ( PGP pgp = new PGP( encryptionKeys ) )
+                {
+                    Stream outputStream = new MemoryStream();
+
+                    using ( inputStream )
+                    {
+                        _ = await pgp.DecryptStreamAsync( inputStream, outputStream );
+                        outputStream.Seek( 0, SeekOrigin.Begin );
+                        return outputStream;
+                    }
+                }
+            }
+        }
+
+        private static async Task<Stream> DecryptAsync ( Stream inputStream, EncryptionKeys encryptionKeys )
+        {
+            using ( PGP pgp = new PGP( encryptionKeys ) )
+            {
+                Stream outputStream = new MemoryStream();
+
+                using ( inputStream )
+                {
+                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream );
                     outputStream.Seek( 0, SeekOrigin.Begin );
                     return outputStream;
                 }
