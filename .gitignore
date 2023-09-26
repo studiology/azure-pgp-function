@@ -44,3 +44,6 @@ obj/
 .vs/
 DependencyValidation*/
 pgp/original/
+
+../*
+sftp/
