@@ -23,27 +23,7 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
-# Secrets
-*.pem
-*.key
-*.pfx
-*.crt
-*.csr
-*key
-*.ppk
-*rsa_id*
-sftp/ssh_host_keys*
-
-logs/
-
-FIXML/
-
 # C# / dotnet
 bin/
 obj/
 .vs/
-DependencyValidation*/
-pgp/original/
-
-../*
-sftp/
