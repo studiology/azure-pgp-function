@@ -53,8 +53,10 @@
               "type": "microsoft.insights/components",
               "location": "[parameters('resourceLocation')]",
               "kind": "web",
-              "properties": {},
-              "apiVersion": "2015-05-01"
+              "properties": {
+                "Application_Type": "other"
+              },
+              "apiVersion": "2018-05-01-preview"
             }
           ]
         }

@@ -54,10 +54,16 @@
                 "tier": "Standard"
               },
               "kind": "Storage",
-              "name": "ricintegrationsdevb0c9",
+              "properties": {
+                "allowBlobPublicAccess": false,
+                "defaultToOAuthAuthentication": true,
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              },
+              "name": "faricintprdcommonpgp",
               "type": "Microsoft.Storage/storageAccounts",
               "location": "[parameters('resourceLocation')]",
-              "apiVersion": "2017-10-01"
+              "apiVersion": "2023-01-01"
             }
           ]
         }
