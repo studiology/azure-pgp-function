@@ -474,4 +474,212 @@ namespace RIC.Integration.Azure.Functions
 
     }
 
+        public static class FuncPGPDecryptionStream
+    {
+        private static readonly HttpClient clientDecrypt = new HttpClient();
+        private static ConcurrentDictionary<string, string> secrectsDecryptStr = new ConcurrentDictionary<string, string>();
+
+        [FunctionName(nameof(FuncPGPDecryptionStream))]
+        public static async Task<IActionResult> RunAsync([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+                                                           ILogger log)
+        {
+            log.LogInformation($"FuncPGPDecryptionStream processed a request.");
+
+            string privateKeySecretId = req.Headers["privatekeysecretid"];
+            string passPhraseSecretId = req.Headers["passphrasesecretid"];
+            string blobstorageAccountSecID = req.Headers["blob-storageaccount-secret-id"];
+
+            string blobstorageContainer = req.Headers["blob-container-id"];
+            string blobTargeteContainer = req.Headers["blob-target-container-id"];
+            string blobTargeteFolder = req.Headers["blob-target-folder"];
+            string blobstorageFilename = req.Headers["blob-filename"];
+
+            if (string.IsNullOrWhiteSpace(privateKeySecretId))
+            {
+                return new BadRequestObjectResult("Please pass privatekeysecretid on the query string");
+            }
+
+            if (string.IsNullOrWhiteSpace(blobstorageFilename))
+            {
+                return new BadRequestObjectResult("Please pass blob-filename on the query string");
+            }
+
+
+            if (string.IsNullOrWhiteSpace(blobTargeteContainer))
+                blobTargeteContainer = blobstorageContainer;
+
+            if (string.IsNullOrWhiteSpace(blobTargeteFolder))
+                blobTargeteFolder = "";
+
+
+            string blobStorageAccountConn = await GetFromKeyVaultAsync(blobstorageAccountSecID);
+            string decryptingContainer = blobstorageContainer;
+
+            string privateKey;
+            string passPhrase = null;
+            try
+            {
+                string baseprivateKey = await GetFromKeyVaultAsync(privateKeySecretId);
+
+                //Convert the key to String
+                byte[] data = Convert.FromBase64String(baseprivateKey);
+                privateKey = Encoding.UTF8.GetString(data);
+
+                if (string.IsNullOrWhiteSpace(passPhraseSecretId) == false)
+                {
+                    passPhrase = await GetFromKeyVaultAsync(passPhraseSecretId);
+                }
+            }
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "SecretNotFound")
+            {
+                return new NotFoundResult();
+            }
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "Forbidden")
+            {
+                return new UnauthorizedResult();
+            }
+
+            log.LogInformation($"FuncPGPDecryptionStream prepared variables.");
+
+            //Generate the pgp file with the correct file extension.
+            string _fileName = blobstorageFilename;
+            try
+            {
+                string fileext = Path.GetExtension(blobstorageFilename);
+                if (fileext.Equals(".pgp", comparisonType: StringComparison.InvariantCultureIgnoreCase)
+                  || fileext.Equals(".gpg", comparisonType: StringComparison.InvariantCultureIgnoreCase))
+                {
+                    _fileName = _fileName.Remove(startIndex: _fileName.LastIndexOf('.'));
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                log.LogInformation($"FuncPGPDecryptionStream reading blob.{blobStorageAccountConn}:{decryptingContainer}:{blobstorageFilename}");
+
+                MemoryStream blobstream = new MemoryStream();
+                await BlobHelper.GetBlobAsStream(blobStorageAccountConn, decryptingContainer, blobstorageFilename, blobstream);
+                if (blobstream != null)
+                    log.LogInformation($"FuncPGPDecryptionStream read blobstream length .{blobstream.Length}");
+
+                log.LogInformation($"FuncPGPDecryptionStream decrypting blob.");
+
+                //if ( string.IsNullOrWhiteSpace( _fileContents ) )
+                //    log.LogInformation( $"FuncPGPDecryptionStream _fileContents is empty" );
+                if (string.IsNullOrWhiteSpace(privateKey))
+                    log.LogInformation($"FuncPGPDecryptionStream privateKey is empty");
+                if (string.IsNullOrWhiteSpace(passPhrase))
+                    log.LogInformation($"FuncPGPDecryptionStream passPhrase is empty");
+
+                if (blobstream.Position != 0)
+                    blobstream.Position = 0;
+                Stream decryptedData = await DecryptAsync(blobstream,
+                                                          GenerateStreamFromString(privateKey),
+                                                          passPhrase);
+
+                log.LogInformation($"FuncPGPDecryptionStream writing blob.{blobStorageAccountConn}:{blobTargeteContainer}:{Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/")}");
+                //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
+                BlobHelper.WriteBlob(blobStorageAccountConn, blobTargeteContainer, Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/"), decryptedData);
+
+
+                log.LogInformation($"FuncPGPDecryptionStream processing commpleted. FileName : " + _fileName);
+
+                return (ActionResult)new OkObjectResult(new { Status = "Success", Message = _fileName });
+            }
+            catch (Exception exp)
+            {
+                log.LogInformation($"FuncPGPDecryptionStream processing failed. Exception : " + exp.ToString());
+                return new BadRequestObjectResult(new { Status = "Failure", Message = "funcPGPDecryptionStream Failed : " + exp.Message.ToString() });
+            }
+
+            //return new OkObjectResult(decryptedData);
+        }
+
+        private static async Task<string> GetFromKeyVaultAsync(string secretIdentifier)
+        {
+            var azureServiceTokenProvider = new AzureServiceTokenProvider();
+            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
+            var kvClient = new KeyVaultClient(authenticationCallback, clientDecrypt);
+
+            SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
+            //byte[] data = Convert.FromBase64String(secretBundle.Value);
+            // Encoding.UTF8.GetString(data);
+
+            return secretBundle.Value;
+
+            //
+            //if (!secrectsDecryptStr.ContainsKey(secretIdentifier))
+            //{
+            //    secrectsDecryptStr[secretIdentifier] = secretBundle.Value;
+            //}
+            //return secrectsDecryptStr[secretIdentifier];
+        }
+
+        [Obsolete]
+        private static async Task<Stream> DecryptAsync(Stream inputStream, string privateKey, string passPhrase)
+        {
+            using (PGP pgp = new PGP())
+            {
+                Stream outputStream = new MemoryStream();
+
+                using (inputStream)
+                using (Stream privateKeyStream = GenerateStreamFromString(privateKey))
+                {
+                    _ = await pgp.DecryptStreamAsync(inputStream, outputStream, privateKeyStream, passPhrase);
+                    outputStream.Seek(0, SeekOrigin.Begin);
+                    return outputStream;
+                }
+            }
+        }
+        private static async Task<Stream> DecryptAsync(Stream inputStream, Stream privateKeyStream, string passPhrase)
+        {
+            using (privateKeyStream)
+            {
+                EncryptionKeys encryptionKeys = new EncryptionKeys(privateKeyStream, passPhrase);
+                using (PGP pgp = new PGP(encryptionKeys))
+                {
+                    Stream outputStream = new MemoryStream();
+
+                    using (inputStream)
+                    {
+                        _ = await pgp.DecryptStreamAsync(inputStream, outputStream);
+                        outputStream.Seek(0, SeekOrigin.Begin);
+                        return outputStream;
+                    }
+                }
+            }
+        }
+
+        private static async Task<Stream> DecryptAsync(Stream inputStream, EncryptionKeys encryptionKeys)
+        {
+            using (PGP pgp = new PGP(encryptionKeys))
+            {
+                Stream outputStream = new MemoryStream();
+
+                using (inputStream)
+                {
+                    _ = await pgp.DecryptStreamAsync(inputStream, outputStream);
+                    outputStream.Seek(0, SeekOrigin.Begin);
+                    return outputStream;
+                }
+            }
+        }
+
+        private static Stream GenerateStreamFromString(string s)
+        {
+            MemoryStream stream = new MemoryStream();
+            StreamWriter writer = new StreamWriter(stream);
+            writer.Write(s);
+            writer.Flush();
+            stream.Position = 0;
+            return stream;
+        }
+
+
+    }
+
+
 }
