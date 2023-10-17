@@ -644,27 +644,27 @@ namespace RIC.Integration.Azure.Functions
             string blobstorageAccountSecID = req.Headers["blob-storageaccount-secret-id"];
 
             string blobstorageContainer = req.Headers["blob-container-id"];
-            string blobTargeteContainer = req.Headers["blob-target-container-id"];
-            string blobTargeteFolder = req.Headers["blob-target-folder"];
+            string blobTargetContainer = req.Headers["blob-target-container-id"];
+            string blobTargetFolder = req.Headers["blob-target-folder"];
             string blobstorageFilename = req.Headers["blob-filename"];
 
             if (string.IsNullOrWhiteSpace(privateKeySecretId))
             {
                 return new BadRequestObjectResult(
-                    "Please pass privatekeysecretid on the query string"
+                    "Please pass privatekeysecretid in the request headers"
                 );
             }
 
             if (string.IsNullOrWhiteSpace(blobstorageFilename))
             {
-                return new BadRequestObjectResult("Please pass blob-filename on the query string");
+                return new BadRequestObjectResult("Please pass blob-filename in the request headers");
             }
 
-            if (string.IsNullOrWhiteSpace(blobTargeteContainer))
-                blobTargeteContainer = blobstorageContainer;
+            if (string.IsNullOrWhiteSpace(blobTargetContainer))
+                blobTargetContainer = blobstorageContainer;
 
-            if (string.IsNullOrWhiteSpace(blobTargeteFolder))
-                blobTargeteFolder = "";
+            if (string.IsNullOrWhiteSpace(blobTargetFolder))
+                blobTargetFolder = "";
 
             string blobStorageAccountConn = await GetFromKeyVaultAsync(blobstorageAccountSecID);
             string decryptingContainer = blobstorageContainer;
@@ -752,13 +752,13 @@ namespace RIC.Integration.Azure.Functions
                 );
 
                 log.LogInformation(
-                    $"FuncPGPDecryptionStream writing blob.{blobStorageAccountConn}:{blobTargeteContainer}:{Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/")}"
+                    $"FuncPGPDecryptionStream writing blob.{blobStorageAccountConn}:{blobTargetContainer}:{Path.Combine(blobTargetFolder.Trim(), _fileName).Replace("\\", "/")}"
                 );
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
                 BlobHelper.WriteBlob(
                     blobStorageAccountConn,
-                    blobTargeteContainer,
-                    Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/"),
+                    blobTargetContainer,
+                    Path.Combine(blobTargetFolder.Trim(), _fileName).Replace("\\", "/"),
                     decryptedData
                 );
 
