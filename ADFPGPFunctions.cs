@@ -763,11 +763,11 @@ namespace RIC.Integration.Azure.Functions
                 );
 
                 log.LogInformation(
-                    $"FuncPGPDecryptionStream processing commpleted. FileName : " + _fileName
+                    $"FuncPGPDecryptionStream processing commpleted. FileName : " + Path.Combine(blobTargetFolder.Trim(), _fileName).Replace("\\", "/")
                 );
 
                 return (ActionResult)
-                    new OkObjectResult(new { Status = "Success", Message = _fileName });
+                    new OkObjectResult(new { Status = "Success", Message = Path.Combine(blobTargetFolder.Trim(), _fileName).Replace("\\", "/") });
             }
             catch (Exception exp)
             {
