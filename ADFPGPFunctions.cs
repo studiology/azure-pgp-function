@@ -23,38 +23,54 @@ namespace RIC.Integration.Azure.Functions
     public static class FuncPGPEncrypt
     {
         private static readonly HttpClient client = new HttpClient();
+
         //private static ConcurrentDictionary<string, string> secrets = new ConcurrentDictionary<string, string>();
 
-        [FunctionName( nameof( FuncPGPEncrypt ) )]
+        [FunctionName(nameof(FuncPGPEncrypt))]
         [Obsolete]
-        public static async Task<IActionResult> RunAsync (
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)]
-        HttpRequest req, ILogger log )
+        public static async Task<IActionResult> RunAsync(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+            ILogger log
+        )
         {
-
-            log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing start." );
+            log.LogInformation(
+                $"C# HTTP trigger function {nameof(FuncPGPEncrypt)} processing start."
+            );
 
             //Get the Base64 encoded public key.
             //string publicKeyBase64 = Environment.GetEnvironmentVariable("Base64PublicEncryptionKey");
-            string publicKeySecretId         = (string)req.Headers["public-key-secret-id"];
-            string blobstorageAccountSecID   = (string)req.Headers["blob-storageaccount-secret-id"];
+            string publicKeySecretId = (string)req.Headers["public-key-secret-id"];
+            string blobstorageAccountSecID = (string)req.Headers["blob-storageaccount-secret-id"];
             string blobstorageContainerSecID = (string)req.Headers["blob-container-secret-id"];
-            string sourceBlobFilename        = req.Headers.ContainsKey("source-blob-filename") ? (string)req.Headers["source-blob-filename"] : (string)req.Headers["blob-filename"];
-            string targetBlobContainer       = (string)req.Headers["target-container"];
-            string targetBlobFilename        = !string.IsNullOrWhiteSpace( req.Headers["target-blob-filename"] ) ? (string)req.Headers["target-blob-filename"] : sourceBlobFilename;
+            string sourceBlobFilename = req.Headers.ContainsKey("source-blob-filename")
+                ? (string)req.Headers["source-blob-filename"]
+                : (string)req.Headers["blob-filename"];
+            string targetBlobContainer = (string)req.Headers["target-container"];
+            string targetBlobFilename = !string.IsNullOrWhiteSpace(
+                req.Headers["target-blob-filename"]
+            )
+                ? (string)req.Headers["target-blob-filename"]
+                : sourceBlobFilename;
             try
             {
-                string publicKeyBase64 = await GetSecretAsync( publicKeySecretId, log );
-                string blobstorageAccountConn = await GetSecretAsync( blobstorageAccountSecID, log );
-                string blobstorageContainer = (string)req.Headers?["source-container"] ?? await GetSecretAsync( blobstorageContainerSecID, log );
-
+                string publicKeyBase64 = await GetSecretAsync(publicKeySecretId, log);
+                string blobstorageAccountConn = await GetSecretAsync(blobstorageAccountSecID, log);
+                string blobstorageContainer =
+                    (string)req.Headers?["source-container"]
+                    ?? await GetSecretAsync(blobstorageContainerSecID, log);
 
                 //Gets the Blob contents. Passing in the Container name and the file name.
                 string _sFile = sourceBlobFilename;
                 string _dFile = targetBlobFilename;
                 string _sContainer = blobstorageContainer;
-                string _dContainer = string.IsNullOrWhiteSpace(targetBlobContainer) ? _sContainer : targetBlobContainer;
-                string _fileContents = BlobHelper.GetBlob(blobstorageAccountConn, _sContainer, _sFile);
+                string _dContainer = string.IsNullOrWhiteSpace(targetBlobContainer)
+                    ? _sContainer
+                    : targetBlobContainer;
+                string _fileContents = BlobHelper.GetBlob(
+                    blobstorageAccountConn,
+                    _sContainer,
+                    _sFile
+                );
 
                 //Convert the key to String
                 byte[] data = Convert.FromBase64String(publicKeyBase64);
@@ -66,76 +82,93 @@ namespace RIC.Integration.Azure.Functions
                 //Generate the pgp file with the correct file extension.
                 _sFile += ".pgp";
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
-                BlobHelper.WriteBlob( blobstorageAccountConn, _dContainer, _dFile, encryptedData );
+                BlobHelper.WriteBlob(blobstorageAccountConn, _dContainer, _dFile, encryptedData);
 
                 //Data Factory requires Azure Function to response back in Json format, or JObject.
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing commpleted. FileName : " + _dFile );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPEncrypt)} processing commpleted. FileName : "
+                        + _dFile
+                );
 
-                return new OkObjectResult( (Status: "Success", Message: _dFile, PGPFilesize: encryptedData.Length) );
+                return new OkObjectResult(
+                    (Status: "Success", Message: _dFile, PGPFilesize: encryptedData.Length)
+                );
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "SecretNotFound" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "SecretNotFound")
             {
-                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
+                log.LogError(
+                    $"C# HTTP trigger function {nameof(FuncPGPEncrypt)} processing failed. Exception : {e}"
+                );
                 return new NotFoundResult();
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "Forbidden" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "Forbidden")
             {
-                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
+                log.LogError(
+                    $"C# HTTP trigger function {nameof(FuncPGPEncrypt)} processing failed. Exception : {e}"
+                );
                 return new UnauthorizedResult();
             }
-            catch ( Exception e )
+            catch (Exception e)
             {
-                log.LogError( $"C# HTTP trigger function {nameof( FuncPGPEncrypt )} processing failed. Exception : {e}" );
-                return new BadRequestObjectResult( (Status: "Failure", Message: $"Failed : {e.Message}. ") );
+                log.LogError(
+                    $"C# HTTP trigger function {nameof(FuncPGPEncrypt)} processing failed. Exception : {e}"
+                );
+                return new BadRequestObjectResult(
+                    (Status: "Failure", Message: $"Failed : {e.Message}. ")
+                );
             }
-
         }
 
-
-
         //Helper function to convert String To Stream object.
-        public static Stream StringtoStream ( string str )
+        public static Stream StringtoStream(string str)
         {
             byte[] byteArray = Encoding.UTF8.GetBytes(str);
             MemoryStream stream = new MemoryStream(byteArray);
             return stream;
         }
 
-        private static async Task<string> GetSecretAsync ( string secretIdentifier, ILogger log )
+        private static async Task<string> GetSecretAsync(string secretIdentifier, ILogger log)
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
-            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
+            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(
+                azureServiceTokenProvider.KeyVaultTokenCallback
+            );
             var kvClient = new KeyVaultClient(authenticationCallback, client);
 
-            log.LogDebug( $"looking up secretIdentifier {secretIdentifier} in Key Vault" );
+            log.LogDebug($"looking up secretIdentifier {secretIdentifier} in Key Vault");
             SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
             return secretBundle.Value;
         }
 
         // TODO: Replace with new method
         [Obsolete]
-        private static async Task<Stream> EncryptAsync ( Stream inputStream, string publicKey )
+        private static async Task<Stream> EncryptAsync(Stream inputStream, string publicKey)
         {
-
-            using ( PGP pgp = new PGP() )
+            using (PGP pgp = new PGP())
             {
                 Stream outputStream = new MemoryStream();
 
-                using ( inputStream )
-                using ( Stream publicKeyStream = GenerateStreamFromString( publicKey ) )
+                using (inputStream)
+                using (Stream publicKeyStream = GenerateStreamFromString(publicKey))
                 {
-                    await pgp.EncryptStreamAsync( inputStream, outputStream, publicKeyStream, true, true );
-                    outputStream.Seek( 0, SeekOrigin.Begin );
+                    await pgp.EncryptStreamAsync(
+                        inputStream,
+                        outputStream,
+                        publicKeyStream,
+                        true,
+                        true
+                    );
+                    outputStream.Seek(0, SeekOrigin.Begin);
                     return outputStream;
                 }
             }
         }
 
-        private static Stream GenerateStreamFromString ( string s )
+        private static Stream GenerateStreamFromString(string s)
         {
             MemoryStream stream = new MemoryStream();
             StreamWriter writer = new StreamWriter(stream);
-            writer.Write( s );
+            writer.Write(s);
             writer.Flush();
             stream.Position = 0;
             return stream;
@@ -145,23 +178,29 @@ namespace RIC.Integration.Azure.Functions
     public static class FuncPGPDecrypt
     {
         private static readonly HttpClient clientDecrypt = new HttpClient();
-        private static ConcurrentDictionary<string, string> secrectsDecrypt = new ConcurrentDictionary<string, string>();
+        private static ConcurrentDictionary<string, string> secrectsDecrypt =
+            new ConcurrentDictionary<string, string>();
 
-        [FunctionName( nameof( FuncPGPDecrypt ) )]
-        public static async Task<IActionResult> RunAsync ( [HttpTrigger( AuthorizationLevel.Function, "post", Route = null )] HttpRequest req,
-                                                           ILogger log )
+        [FunctionName(nameof(FuncPGPDecrypt))]
+        public static async Task<IActionResult> RunAsync(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+            ILogger log
+        )
         {
-            log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} processed a request." );
+            log.LogInformation(
+                $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} processed a request."
+            );
 
             string privateKeySecretId = req.Headers["privatekeysecretid"];
             string passPhraseSecretId = req.Headers["passphrasesecretid"];
 
-
             string blobstorageAccountSecID = req.Headers["blob-storageaccount-secret-id"];
             string blobstorageContainerSecID = req.Headers["blob-container-secret-id"];
-            if ( privateKeySecretId == null )
+            if (privateKeySecretId == null)
             {
-                return new BadRequestObjectResult( "Please pass a private key secret identifier on the query string" );
+                return new BadRequestObjectResult(
+                    "Please pass a private key secret identifier on the query string"
+                );
             }
 
             string blobStorageAccountConn = await GetFromKeyVaultAsync(blobstorageAccountSecID);
@@ -175,80 +214,124 @@ namespace RIC.Integration.Azure.Functions
 
                 //Convert the key to String
                 byte[] data = Convert.FromBase64String(baseprivateKey);
-                privateKey = Encoding.UTF8.GetString( data );
+                privateKey = Encoding.UTF8.GetString(data);
 
-                if ( string.IsNullOrWhiteSpace( passPhraseSecretId ) == false )
+                if (string.IsNullOrWhiteSpace(passPhraseSecretId) == false)
                 {
-                    passPhrase = await GetFromKeyVaultAsync( passPhraseSecretId );
+                    passPhrase = await GetFromKeyVaultAsync(passPhraseSecretId);
                 }
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "SecretNotFound" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "SecretNotFound")
             {
                 return new NotFoundResult();
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "Forbidden" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "Forbidden")
             {
                 return new UnauthorizedResult();
             }
 
-            log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} prepared variables." );
+            log.LogInformation(
+                $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} prepared variables."
+            );
             string blobstorageFilename = req.Headers["blob-filename"];
             //Generate the pgp file with the correct file extension.
             string _fileName = blobstorageFilename;
             try
             {
                 string fileext = Path.GetExtension(blobstorageFilename);
-                if ( fileext.Equals( ".pgp", comparisonType: StringComparison.InvariantCultureIgnoreCase )
-                  || fileext.Equals( ".gpg", comparisonType: StringComparison.InvariantCultureIgnoreCase ) )
+                if (
+                    fileext.Equals(
+                        ".pgp",
+                        comparisonType: StringComparison.InvariantCultureIgnoreCase
+                    )
+                    || fileext.Equals(
+                        ".gpg",
+                        comparisonType: StringComparison.InvariantCultureIgnoreCase
+                    )
+                )
                 {
-                    _fileName = _fileName.Remove( startIndex: _fileName.LastIndexOf('.') );
+                    _fileName = _fileName.Remove(startIndex: _fileName.LastIndexOf('.'));
                 }
             }
-            catch
-            {
-            }
+            catch { }
 
             try
             {
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} reading blob." );
-                string _fileContents = BlobHelper.GetBlob(blobStorageAccountConn, decryptingContainer, blobstorageFilename);
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} reading blob."
+                );
+                string _fileContents = BlobHelper.GetBlob(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    blobstorageFilename
+                );
 
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} decrypting blob." );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} decrypting blob."
+                );
 
-                if ( string.IsNullOrWhiteSpace( _fileContents ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} _fileContents is empty" );
-                if ( string.IsNullOrWhiteSpace( privateKey ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} privateKey is empty" );
-                if ( string.IsNullOrWhiteSpace( passPhrase ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} passPhrase is empty" );
+                if (string.IsNullOrWhiteSpace(_fileContents))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} _fileContents is empty"
+                    );
+                if (string.IsNullOrWhiteSpace(privateKey))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} privateKey is empty"
+                    );
+                if (string.IsNullOrWhiteSpace(passPhrase))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} passPhrase is empty"
+                    );
 
+                Stream decryptedData = await DecryptAsync(
+                    GenerateStreamFromString(_fileContents),
+                    GenerateStreamFromString(privateKey),
+                    passPhrase
+                );
 
-                Stream decryptedData = await DecryptAsync(GenerateStreamFromString(_fileContents),
-                                                          GenerateStreamFromString(privateKey),
-                                                          passPhrase);
-
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} writing blob." );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} writing blob."
+                );
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
-                BlobHelper.WriteBlob( blobStorageAccountConn, decryptingContainer, _fileName, decryptedData );
+                BlobHelper.WriteBlob(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    _fileName,
+                    decryptedData
+                );
 
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} processing commpleted. FileName : "
+                        + _fileName
+                );
 
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} processing commpleted. FileName : " + _fileName );
-
-                return (ActionResult)new OkObjectResult( new { Status = "Success", Message = _fileName } );
+                return (ActionResult)
+                    new OkObjectResult(new { Status = "Success", Message = _fileName });
             }
-            catch ( Exception exp )
+            catch (Exception exp)
             {
-                log.LogInformation( $"C# HTTP trigger function {nameof( FuncPGPDecrypt )} processing failed. Exception : " + exp.ToString() );
-                return new BadRequestObjectResult( new { Status = "Failure", Message = "funcPGPDecrypt Failed : " + exp.Message.ToString() } );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(FuncPGPDecrypt)} processing failed. Exception : "
+                        + exp.ToString()
+                );
+                return new BadRequestObjectResult(
+                    new
+                    {
+                        Status = "Failure",
+                        Message = "funcPGPDecrypt Failed : " + exp.Message.ToString()
+                    }
+                );
             }
 
             //return new OkObjectResult(decryptedData);
         }
 
-        private static async Task<string> GetFromKeyVaultAsync ( string secretIdentifier )
+        private static async Task<string> GetFromKeyVaultAsync(string secretIdentifier)
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
-            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
+            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(
+                azureServiceTokenProvider.KeyVaultTokenCallback
+            );
             var kvClient = new KeyVaultClient(authenticationCallback, clientDecrypt);
 
             SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
@@ -266,92 +349,112 @@ namespace RIC.Integration.Azure.Functions
         }
 
         [Obsolete]
-        private static async Task<Stream> DecryptAsync ( Stream inputStream, string privateKey, string passPhrase )
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            string privateKey,
+            string passPhrase
+        )
         {
-            using ( PGP pgp = new PGP() )
+            using (PGP pgp = new PGP())
             {
                 Stream outputStream = new MemoryStream();
 
-                using ( inputStream )
-                using ( Stream privateKeyStream = GenerateStreamFromString( privateKey ) )
+                using (inputStream)
+                using (Stream privateKeyStream = GenerateStreamFromString(privateKey))
                 {
-                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
-                    outputStream.Seek( 0, SeekOrigin.Begin );
+                    _ = await pgp.DecryptStreamAsync(
+                        inputStream,
+                        outputStream,
+                        privateKeyStream,
+                        passPhrase
+                    );
+                    outputStream.Seek(0, SeekOrigin.Begin);
                     return outputStream;
                 }
             }
         }
-        private static async Task<Stream> DecryptAsync ( Stream inputStream, Stream privateKeyStream, string passPhrase )
+
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            Stream privateKeyStream,
+            string passPhrase
+        )
         {
-            using ( privateKeyStream )
+            using (privateKeyStream)
             {
                 EncryptionKeys encryptionKeys = new EncryptionKeys(privateKeyStream, passPhrase);
-                using ( PGP pgp = new PGP( encryptionKeys ) )
+                using (PGP pgp = new PGP(encryptionKeys))
                 {
                     Stream outputStream = new MemoryStream();
 
-                    using ( inputStream )
+                    using (inputStream)
                     {
-                        _ = await pgp.DecryptStreamAsync( inputStream, outputStream );
-                        outputStream.Seek( 0, SeekOrigin.Begin );
+                        _ = await pgp.DecryptStreamAsync(inputStream, outputStream);
+                        outputStream.Seek(0, SeekOrigin.Begin);
                         return outputStream;
                     }
                 }
             }
         }
 
-        private static async Task<Stream> DecryptAsync ( Stream inputStream, EncryptionKeys encryptionKeys )
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            EncryptionKeys encryptionKeys
+        )
         {
-            using ( PGP pgp = new PGP( encryptionKeys ) )
+            using (PGP pgp = new PGP(encryptionKeys))
             {
                 Stream outputStream = new MemoryStream();
 
-                using ( inputStream )
+                using (inputStream)
                 {
-                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream );
-                    outputStream.Seek( 0, SeekOrigin.Begin );
+                    _ = await pgp.DecryptStreamAsync(inputStream, outputStream);
+                    outputStream.Seek(0, SeekOrigin.Begin);
                     return outputStream;
                 }
             }
         }
 
-        private static Stream GenerateStreamFromString ( string s )
+        private static Stream GenerateStreamFromString(string s)
         {
             MemoryStream stream = new MemoryStream();
             StreamWriter writer = new StreamWriter(stream);
-            writer.Write( s );
+            writer.Write(s);
             writer.Flush();
             stream.Position = 0;
             return stream;
         }
-
-
     }
 
     public static class PGPDecryptBlob
     {
         private static readonly HttpClient clientDecrypt = new HttpClient();
-        private static ConcurrentDictionary<string, string> secrectsDecrypt = new ConcurrentDictionary<string, string>();
+        private static ConcurrentDictionary<string, string> secrectsDecrypt =
+            new ConcurrentDictionary<string, string>();
 
-        [FunctionName( nameof( PGPDecryptBlob ) )]
+        [FunctionName(nameof(PGPDecryptBlob))]
         [Obsolete]
-        public static async Task<IActionResult> RunAsync (
-            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)]
-        HttpRequest req, ILogger log )
+        public static async Task<IActionResult> RunAsync(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+            ILogger log
+        )
         {
-            log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} processed a request." );
+            log.LogInformation(
+                $"C# HTTP trigger function {nameof(PGPDecryptBlob)} processed a request."
+            );
 
             string privateKeySecretId = req.Headers["privatekeysecretid"];
             string passPhraseSecretId = req.Headers["passphrasesecretid"];
-
 
             string blobstorageAccountSecID = req.Headers["blob-storageaccount-secret-id"];
             string blobstorageContainerSecID = req.Headers["blob-container-secret-id"];
             string blobstorageFilename = req.Headers["blob-filename"];
 
-            if ( privateKeySecretId == null )
+            if (privateKeySecretId == null)
             {
-                return new BadRequestObjectResult( "Please pass a private key secret identifier on the query string" );
+                return new BadRequestObjectResult(
+                    "Please pass a private key secret identifier on the query string"
+                );
             }
 
             string blobStorageAccountConn = await GetFromKeyVaultAsync(blobstorageAccountSecID);
@@ -365,69 +468,110 @@ namespace RIC.Integration.Azure.Functions
 
                 //Convert the key to String
                 byte[] data = Convert.FromBase64String(baseprivateKey);
-                privateKey = Encoding.UTF8.GetString( data );
+                privateKey = Encoding.UTF8.GetString(data);
 
-                if ( string.IsNullOrWhiteSpace( passPhraseSecretId ) == false )
+                if (string.IsNullOrWhiteSpace(passPhraseSecretId) == false)
                 {
-                    passPhrase = await GetFromKeyVaultAsync( passPhraseSecretId );
+                    passPhrase = await GetFromKeyVaultAsync(passPhraseSecretId);
                 }
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "SecretNotFound" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "SecretNotFound")
             {
                 return new NotFoundResult();
             }
-            catch ( KeyVaultErrorException e ) when ( e.Body.Error.Code == "Forbidden" )
+            catch (KeyVaultErrorException e) when (e.Body.Error.Code == "Forbidden")
             {
                 return new UnauthorizedResult();
             }
 
-            log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} prepared variables." );
+            log.LogInformation(
+                $"C# HTTP trigger function {nameof(PGPDecryptBlob)} prepared variables."
+            );
             //Generate the pgp file with the correct file extension.
-            string _fileName = blobstorageFilename.Replace(".pgp","");
-
+            string _fileName = blobstorageFilename.Replace(".pgp", "");
 
             try
             {
-                log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} reading blob." );
-                string _fileContents = BlobHelper.GetBlob(blobStorageAccountConn, decryptingContainer, blobstorageFilename);
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(PGPDecryptBlob)} reading blob."
+                );
+                string _fileContents = BlobHelper.GetBlob(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    blobstorageFilename
+                );
 
-                log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} decrypting blob." );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(PGPDecryptBlob)} decrypting blob."
+                );
 
-                if ( string.IsNullOrWhiteSpace( _fileContents ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} _fileContents is empty" );
-                if ( string.IsNullOrWhiteSpace( privateKey ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} privateKey is empty" );
-                if ( string.IsNullOrWhiteSpace( passPhrase ) )
-                    log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} passPhrase is empty" );
+                if (string.IsNullOrWhiteSpace(_fileContents))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(PGPDecryptBlob)} _fileContents is empty"
+                    );
+                if (string.IsNullOrWhiteSpace(privateKey))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(PGPDecryptBlob)} privateKey is empty"
+                    );
+                if (string.IsNullOrWhiteSpace(passPhrase))
+                    log.LogInformation(
+                        $"C# HTTP trigger function {nameof(PGPDecryptBlob)} passPhrase is empty"
+                    );
 
                 MemoryStream blobstream = new MemoryStream();
-                await BlobHelper.GetBlobAsStream( blobStorageAccountConn, decryptingContainer, blobstorageFilename, blobstream );
+                await BlobHelper.GetBlobAsStream(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    blobstorageFilename,
+                    blobstream
+                );
 
                 blobstream.Position = 0;
                 Stream decryptedData = await DecryptAsync(blobstream, privateKey, passPhrase);
 
-                log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} wrinting blob." );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(PGPDecryptBlob)} wrinting blob."
+                );
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
-                BlobHelper.WriteBlob( blobStorageAccountConn, decryptingContainer, _fileName, decryptedData );
+                BlobHelper.WriteBlob(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    _fileName,
+                    decryptedData
+                );
 
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(PGPDecryptBlob)} processing commpleted. FileName : "
+                        + _fileName
+                );
 
-                log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} processing commpleted. FileName : " + _fileName );
-
-                return (ActionResult)new OkObjectResult( new { Status = "Success", Message = _fileName } );
+                return (ActionResult)
+                    new OkObjectResult(new { Status = "Success", Message = _fileName });
             }
-            catch ( Exception exp )
+            catch (Exception exp)
             {
-                log.LogInformation( $"C# HTTP trigger function {nameof( PGPDecryptBlob )} processing failed. Exception : " + exp.ToString() );
-                return new BadRequestObjectResult( new { Status = "Failure", Message = "PGPDecryptBlob Failed : " + exp.Message.ToString() } );
+                log.LogInformation(
+                    $"C# HTTP trigger function {nameof(PGPDecryptBlob)} processing failed. Exception : "
+                        + exp.ToString()
+                );
+                return new BadRequestObjectResult(
+                    new
+                    {
+                        Status = "Failure",
+                        Message = "PGPDecryptBlob Failed : " + exp.Message.ToString()
+                    }
+                );
             }
 
             //return new OkObjectResult(decryptedData);
         }
 
-        private static async Task<string> GetFromKeyVaultAsync ( string secretIdentifier )
+        private static async Task<string> GetFromKeyVaultAsync(string secretIdentifier)
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
-            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
+            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(
+                azureServiceTokenProvider.KeyVaultTokenCallback
+            );
             var kvClient = new KeyVaultClient(authenticationCallback, clientDecrypt);
 
             SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
@@ -445,43 +589,53 @@ namespace RIC.Integration.Azure.Functions
         }
 
         [Obsolete]
-        private static async Task<Stream> DecryptAsync ( Stream inputStream, string privateKey, string passPhrase )
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            string privateKey,
+            string passPhrase
+        )
         {
-            using ( PGP pgp = new PGP() )
+            using (PGP pgp = new PGP())
             {
                 Stream outputStream = new MemoryStream();
 
-                using ( inputStream )
-                using ( Stream privateKeyStream = GenerateStreamFromString( privateKey ) )
+                using (inputStream)
+                using (Stream privateKeyStream = GenerateStreamFromString(privateKey))
                 {
-                    _ = await pgp.DecryptStreamAsync( inputStream, outputStream, privateKeyStream, passPhrase );
-                    _ = outputStream.Seek( 0, SeekOrigin.Begin );
+                    _ = await pgp.DecryptStreamAsync(
+                        inputStream,
+                        outputStream,
+                        privateKeyStream,
+                        passPhrase
+                    );
+                    _ = outputStream.Seek(0, SeekOrigin.Begin);
                     return outputStream;
                 }
             }
         }
 
-        private static Stream GenerateStreamFromString ( string s )
+        private static Stream GenerateStreamFromString(string s)
         {
             MemoryStream stream = new MemoryStream();
             StreamWriter writer = new StreamWriter(stream);
-            writer.Write( s );
+            writer.Write(s);
             writer.Flush();
             stream.Position = 0;
             return stream;
         }
-
-
     }
 
-        public static class FuncPGPDecryptionStream
+    public static class FuncPGPDecryptionStream
     {
         private static readonly HttpClient clientDecrypt = new HttpClient();
-        private static ConcurrentDictionary<string, string> secrectsDecryptStr = new ConcurrentDictionary<string, string>();
+        private static ConcurrentDictionary<string, string> secrectsDecryptStr =
+            new ConcurrentDictionary<string, string>();
 
         [FunctionName(nameof(FuncPGPDecryptionStream))]
-        public static async Task<IActionResult> RunAsync([HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
-                                                           ILogger log)
+        public static async Task<IActionResult> RunAsync(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = null)] HttpRequest req,
+            ILogger log
+        )
         {
             log.LogInformation($"FuncPGPDecryptionStream processed a request.");
 
@@ -496,7 +650,9 @@ namespace RIC.Integration.Azure.Functions
 
             if (string.IsNullOrWhiteSpace(privateKeySecretId))
             {
-                return new BadRequestObjectResult("Please pass privatekeysecretid on the query string");
+                return new BadRequestObjectResult(
+                    "Please pass privatekeysecretid on the query string"
+                );
             }
 
             if (string.IsNullOrWhiteSpace(blobstorageFilename))
@@ -504,13 +660,11 @@ namespace RIC.Integration.Azure.Functions
                 return new BadRequestObjectResult("Please pass blob-filename on the query string");
             }
 
-
             if (string.IsNullOrWhiteSpace(blobTargeteContainer))
                 blobTargeteContainer = blobstorageContainer;
 
             if (string.IsNullOrWhiteSpace(blobTargeteFolder))
                 blobTargeteFolder = "";
-
 
             string blobStorageAccountConn = await GetFromKeyVaultAsync(blobstorageAccountSecID);
             string decryptingContainer = blobstorageContainer;
@@ -546,24 +700,39 @@ namespace RIC.Integration.Azure.Functions
             try
             {
                 string fileext = Path.GetExtension(blobstorageFilename);
-                if (fileext.Equals(".pgp", comparisonType: StringComparison.InvariantCultureIgnoreCase)
-                  || fileext.Equals(".gpg", comparisonType: StringComparison.InvariantCultureIgnoreCase))
+                if (
+                    fileext.Equals(
+                        ".pgp",
+                        comparisonType: StringComparison.InvariantCultureIgnoreCase
+                    )
+                    || fileext.Equals(
+                        ".gpg",
+                        comparisonType: StringComparison.InvariantCultureIgnoreCase
+                    )
+                )
                 {
                     _fileName = _fileName.Remove(startIndex: _fileName.LastIndexOf('.'));
                 }
             }
-            catch
-            {
-            }
+            catch { }
 
             try
             {
-                log.LogInformation($"FuncPGPDecryptionStream reading blob.{blobStorageAccountConn}:{decryptingContainer}:{blobstorageFilename}");
+                log.LogInformation(
+                    $"FuncPGPDecryptionStream reading blob.{blobStorageAccountConn}:{decryptingContainer}:{blobstorageFilename}"
+                );
 
                 MemoryStream blobstream = new MemoryStream();
-                await BlobHelper.GetBlobAsStream(blobStorageAccountConn, decryptingContainer, blobstorageFilename, blobstream);
+                await BlobHelper.GetBlobAsStream(
+                    blobStorageAccountConn,
+                    decryptingContainer,
+                    blobstorageFilename,
+                    blobstream
+                );
                 if (blobstream != null)
-                    log.LogInformation($"FuncPGPDecryptionStream read blobstream length .{blobstream.Length}");
+                    log.LogInformation(
+                        $"FuncPGPDecryptionStream read blobstream length .{blobstream.Length}"
+                    );
 
                 log.LogInformation($"FuncPGPDecryptionStream decrypting blob.");
 
@@ -576,23 +745,42 @@ namespace RIC.Integration.Azure.Functions
 
                 if (blobstream.Position != 0)
                     blobstream.Position = 0;
-                Stream decryptedData = await DecryptAsync(blobstream,
-                                                          GenerateStreamFromString(privateKey),
-                                                          passPhrase);
+                Stream decryptedData = await DecryptAsync(
+                    blobstream,
+                    GenerateStreamFromString(privateKey),
+                    passPhrase
+                );
 
-                log.LogInformation($"FuncPGPDecryptionStream writing blob.{blobStorageAccountConn}:{blobTargeteContainer}:{Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/")}");
+                log.LogInformation(
+                    $"FuncPGPDecryptionStream writing blob.{blobStorageAccountConn}:{blobTargeteContainer}:{Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/")}"
+                );
                 //Write The encrypted file to the same Blob now. Extension is modified while file name remains the same. Later func activity will move it to SFTP destination.
-                BlobHelper.WriteBlob(blobStorageAccountConn, blobTargeteContainer, Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/"), decryptedData);
+                BlobHelper.WriteBlob(
+                    blobStorageAccountConn,
+                    blobTargeteContainer,
+                    Path.Combine(blobTargeteFolder.Trim(), _fileName).Replace("\\", "/"),
+                    decryptedData
+                );
 
+                log.LogInformation(
+                    $"FuncPGPDecryptionStream processing commpleted. FileName : " + _fileName
+                );
 
-                log.LogInformation($"FuncPGPDecryptionStream processing commpleted. FileName : " + _fileName);
-
-                return (ActionResult)new OkObjectResult(new { Status = "Success", Message = _fileName });
+                return (ActionResult)
+                    new OkObjectResult(new { Status = "Success", Message = _fileName });
             }
             catch (Exception exp)
             {
-                log.LogInformation($"FuncPGPDecryptionStream processing failed. Exception : " + exp.ToString());
-                return new BadRequestObjectResult(new { Status = "Failure", Message = "funcPGPDecryptionStream Failed : " + exp.Message.ToString() });
+                log.LogInformation(
+                    $"FuncPGPDecryptionStream processing failed. Exception : " + exp.ToString()
+                );
+                return new BadRequestObjectResult(
+                    new
+                    {
+                        Status = "Failure",
+                        Message = "funcPGPDecryptionStream Failed : " + exp.Message.ToString()
+                    }
+                );
             }
 
             //return new OkObjectResult(decryptedData);
@@ -601,7 +789,9 @@ namespace RIC.Integration.Azure.Functions
         private static async Task<string> GetFromKeyVaultAsync(string secretIdentifier)
         {
             var azureServiceTokenProvider = new AzureServiceTokenProvider();
-            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(azureServiceTokenProvider.KeyVaultTokenCallback);
+            var authenticationCallback = new KeyVaultClient.AuthenticationCallback(
+                azureServiceTokenProvider.KeyVaultTokenCallback
+            );
             var kvClient = new KeyVaultClient(authenticationCallback, clientDecrypt);
 
             SecretBundle secretBundle = await kvClient.GetSecretAsync(secretIdentifier);
@@ -619,7 +809,11 @@ namespace RIC.Integration.Azure.Functions
         }
 
         [Obsolete]
-        private static async Task<Stream> DecryptAsync(Stream inputStream, string privateKey, string passPhrase)
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            string privateKey,
+            string passPhrase
+        )
         {
             using (PGP pgp = new PGP())
             {
@@ -628,13 +822,23 @@ namespace RIC.Integration.Azure.Functions
                 using (inputStream)
                 using (Stream privateKeyStream = GenerateStreamFromString(privateKey))
                 {
-                    _ = await pgp.DecryptStreamAsync(inputStream, outputStream, privateKeyStream, passPhrase);
+                    _ = await pgp.DecryptStreamAsync(
+                        inputStream,
+                        outputStream,
+                        privateKeyStream,
+                        passPhrase
+                    );
                     outputStream.Seek(0, SeekOrigin.Begin);
                     return outputStream;
                 }
             }
         }
-        private static async Task<Stream> DecryptAsync(Stream inputStream, Stream privateKeyStream, string passPhrase)
+
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            Stream privateKeyStream,
+            string passPhrase
+        )
         {
             using (privateKeyStream)
             {
@@ -653,7 +857,10 @@ namespace RIC.Integration.Azure.Functions
             }
         }
 
-        private static async Task<Stream> DecryptAsync(Stream inputStream, EncryptionKeys encryptionKeys)
+        private static async Task<Stream> DecryptAsync(
+            Stream inputStream,
+            EncryptionKeys encryptionKeys
+        )
         {
             using (PGP pgp = new PGP(encryptionKeys))
             {
@@ -677,9 +884,5 @@ namespace RIC.Integration.Azure.Functions
             stream.Position = 0;
             return stream;
         }
-
-
     }
-
-
 }
